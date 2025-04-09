@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>語音對話</title>
+    <style>
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            min-height: 100vh;
+            background-color: #f0e6d2;
+            color: #333;
+            padding-bottom: 20px; /* 移除底部的 padding */
+            box-sizing: border-box;
+            background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><rect width="100" height="100" fill-opacity="0.05" fill="#d2b48c"/></svg>');
+        }
+
+        .container {
+            width: 90%;
+            max-width: 400px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: rgba(255, 255, 255, 0.8);
+            border-radius: 10px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+
+        #startButton {
+            padding: 15px 30px;
+            font-size: 1.2em;
+            background-color: #e47911;
+            color: white;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            box-shadow: 0 3px 5px rgba(0, 0, 0, 0.2);
+            margin-bottom: 20px; /* 與下方文字框間隔 */
+            background-image: linear-gradient(45deg, rgba(0,0,0,0.1) 25%, transparent 25%, transparent 50%, rgba(0,0,0,0.1) 50%, rgba(0,0,0,0.1) 75%, transparent 75%, transparent);
+            background-size: 20px 20px;
+        }
+
+        #startButton:active {
+            background-color: #c86300;
+        }
+
+        textarea {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 15px;
+            border: 2px solid #a0522d;
+            border-radius: 8px;
+            font-size: 1em;
+            box-sizing: border-box;
+            background-color: #f9f9f9;
+        }
+
+        #transcriptionResult {
+            min-height: 120px;
+        }
+
+        #replyResult {
+            min-height: 100px;
+        }
+
+        #replyAudio {
+            width: 90%;
+            max-width: 400px;
+            background-color: #fff;
+            padding: 10px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+            margin-top: 20px; /* 與上方文字框間隔 */
+        }
+    </style>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <button id="startButton">按住說話</button>
+        <textarea id="transcriptionResult" placeholder="語音辨識結果"></textarea>
+        <textarea id="replyResult" placeholder="語音回覆結果"></textarea>
+        <audio id="replyAudio" controls></audio>
+    </div>
+
+    <script>
+        const startButton = document.getElementById('startButton');
+        const transcriptionResult = document.getElementById('transcriptionResult');
+        const replyResult = document.getElementById('replyResult');
+        const replyAudio = document.getElementById('replyAudio');
+
+        let mediaRecorder;
+        let audioChunks = [];
+        let isRecording = false;
+
+        const startRecording = async () => {
+            if (!isRecording) {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    mediaRecorder = new MediaRecorder(stream);
+                    audioChunks = [];
+
+                    mediaRecorder.ondataavailable = event => {
+                        if (event.data.size > 0) {
+                            audioChunks.push(event.data);
+                        }
+                    };
+
+                    mediaRecorder.onstop = async () => {
+                        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' }); // 或其他適合的音訊格式
+                        await uploadAudio(audioBlob);
+                    };
+
+                    mediaRecorder.start();
+                    isRecording = true;
+                    startButton.textContent = '鬆開停止';
+                    console.log('開始錄音');
+                } catch (error) {
+                    console.error('無法獲取麥克風:', error);
+                    startButton.textContent = '無法錄音';
+                }
+            }
+        };
+
+        const stopRecording = () => {
+            if (isRecording && mediaRecorder && mediaRecorder.state === 'recording') {
+                mediaRecorder.stop();
+                isRecording = false;
+                startButton.textContent = '按住說話';
+                console.log('停止錄音');
+            }
+        };
+
+        const uploadAudio = async (audioBlob) => {
+            const formData = new FormData();
+            formData.append('audio', audioBlob, 'recording.webm'); // 設定上傳的檔案名稱和格式
+
+            // TODO: 將 'YOUR_UPLOAD_URL' 替換為您的伺服器上傳 API 端點
+            try {
+                const response = await fetch('YOUR_UPLOAD_URL', {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log('伺服器回傳:', data);
+
+                    // 假設伺服器回傳的 JSON 包含 transcription 和 replyText, replyAudioUrl
+                    if (data.transcription) {
+                        transcriptionResult.value = data.transcription;
+                    }
+                    if (data.replyText) {
+                        replyResult.value = data.replyText;
+                    }
+                    if (data.replyAudioUrl) {
+                        replyAudio.src = data.replyAudioUrl;
+                        replyAudio.style.display = 'block'; // 顯示語音播放器
+                    } else {
+                        replyAudio.style.display = 'none'; // 如果沒有語音回覆檔案，則隱藏播放器
+                    }
+
+                } else {
+                    console.error('上傳失敗:', response.status);
+                    transcriptionResult.value = '語音辨識失敗';
+                    replyResult.value = '無法取得回覆';
+                    replyAudio.style.display = 'none';
+                }
+            } catch (error) {
+                console.error('上傳過程中發生錯誤:', error);
+                transcriptionResult.value = '語音辨識失敗';
+                replyResult.value = '無法取得回覆';
+                replyAudio.style.display = 'none';
+            }
+        };
+
+        // 桌面瀏覽器事件
+        startButton.addEventListener('mousedown', startRecording);
+        startButton.addEventListener('mouseup', stopRecording);
+        startButton.addEventListener('mouseleave', stopRecording);
+
+        // 手機瀏覽器事件
+        startButton.addEventListener('touchstart', (event) => {
+            event.preventDefault();
+            startRecording();
+        });
+        startButton.addEventListener('touchend', stopRecording);
+        startButton.addEventListener('touchcancel', stopRecording);
+        startButton.addEventListener('touchmove', (event) => {
+            const rect = startButton.getBoundingClientRect();
+            if (event.touches[0].clientX < rect.left || event.touches[0].clientX > rect.right ||
+                event.touches[0].clientY < rect.top || event.touches[0].clientY > rect.bottom) {
+                stopRecording();
+            }
+        });
+    </script>
+</body>
+</html>
